@@ -1,1 +1,1 @@
-requests>=2.32
+holidays>=0.103

@@ -1,13 +1,11 @@
 name: update-holidays
 
-# 한국천문연구원 특일 정보 API로 공휴일 JSON을 갱신하고 커밋한다.
+# `holidays` 패키지로 공휴일 JSON을 다시 만들어 커밋한다.
 # shiftmate 앱은 이 저장소의 raw JSON만 받아간다(명세 4.1).
 #
-# 필요한 저장소 시크릿 (Settings → Secrets and variables → Actions):
-#   SERVICE_KEY   data.go.kr 「특일 정보」 활용신청 후 받은 일반 인증키
-#                 ★ 포털의 'Decoding' 쪽을 넣는다. 'Encoding' 쪽을 넣으면 이중 인코딩이
-#                   되어 SERVICE_KEY_IS_NOT_REGISTERED_ERROR 가 난다(스크립트가 자동으로
-#                   되돌리기는 하지만 경고를 남긴다).
+# **시크릿이 필요 없다.** 원래 공공데이터포털 특일 정보 API로 짰다가 2026-08-23에
+# 갈아탔다 — 그 키는 활용기간이 24개월이라 만료되면 파이프라인이 죽는데, 그 시점은
+# 앱이 배포된 지 한참 뒤다. 키가 없으면 만료도 없다.
 
 on:
   schedule:
@@ -15,10 +13,10 @@ on:
     #
     # 명세 4.3은 "월 1회"라고 썼는데 **주 1회로 올렸다.** 명세 4.5가 스스로 지목한 가장 큰
     # 리스크가 "임시공휴일이 지정됐는데 갱신이 늦어 전체 사용자의 알림이 틀리는 것"인데,
-    # 월 1회면 그 창이 최대 30일이다. 주 1회로 7일이 된다. 이 저장소는 **공개**라
-    # Actions 무료분이 무제한이므로 비용이 0이다(비공개인 ipo_note 와 다른 점).
+    # 월 1회면 그 창이 최대 30일이다. 이 저장소는 **공개**라 Actions 무료분이 무제한이라
+    # 비용이 0이다(비공개인 ipo_note 와 다른 점).
     - cron: "20 20 * * 0"
-  workflow_dispatch: {}   # 임시공휴일 지정 시 수동 실행
+  workflow_dispatch: {}   # 임시공휴일이 지정됐을 때 수동 실행
 
 concurrency:
   group: update-holidays
@@ -39,18 +37,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 의존성 설치
-        run: pip install -r requirements.txt -r requirements-dev.txt
+      # -U 로 매번 최신을 받는다. 임시공휴일이 라이브러리 릴리스로 들어오므로
+      # 이 자리에서는 **재현성보다 신선함이 중요하다**(핀 고정하면 새 임시공휴일이
+      # 영원히 안 들어온다).
+      - name: 의존성 설치 (최신으로 갱신)
+        run: pip install -U -r requirements.txt -r requirements-dev.txt
 
-      # 공휴일을 받아오기 **전에** 돌린다. 파서가 깨진 채로 JSON을 덮어쓰면
+      # 다시 만들기 **전에** 돌린다. 생성기가 깨진 채로 JSON을 덮어쓰면
       # 그 시점부터 전체 사용자의 휴무 판정이 틀린다.
       - name: 테스트
         run: python -m pytest tests -q
 
-      - name: 공휴일 갱신
-        env:
-          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
-        run: python scripts/fetch_holidays.py
+      # 공휴일이 **줄어들면 여기서 실패한다**(build_holidays.py 의 축소 감지).
+      # 출처가 라이브러리 하나뿐이라 그것이 조용히 나빠지는 것이 최대 위험이고,
+      # 고친 것인지 회귀인지는 사람이 판단해야 한다.
+      - name: 공휴일 생성
+        run: python scripts/build_holidays.py
 
       - name: 커밋
         run: |
