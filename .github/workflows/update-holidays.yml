@@ -1,0 +1,66 @@
+name: update-holidays
+
+# 한국천문연구원 특일 정보 API로 공휴일 JSON을 갱신하고 커밋한다.
+# shiftmate 앱은 이 저장소의 raw JSON만 받아간다(명세 4.1).
+#
+# 필요한 저장소 시크릿 (Settings → Secrets and variables → Actions):
+#   SERVICE_KEY   data.go.kr 「특일 정보」 활용신청 후 받은 일반 인증키
+#                 ★ 포털의 'Decoding' 쪽을 넣는다. 'Encoding' 쪽을 넣으면 이중 인코딩이
+#                   되어 SERVICE_KEY_IS_NOT_REGISTERED_ERROR 가 난다(스크립트가 자동으로
+#                   되돌리기는 하지만 경고를 남긴다).
+
+on:
+  schedule:
+    # 크론은 UTC. 일요일 20:20 UTC = 월요일 05:20 KST.
+    #
+    # 명세 4.3은 "월 1회"라고 썼는데 **주 1회로 올렸다.** 명세 4.5가 스스로 지목한 가장 큰
+    # 리스크가 "임시공휴일이 지정됐는데 갱신이 늦어 전체 사용자의 알림이 틀리는 것"인데,
+    # 월 1회면 그 창이 최대 30일이다. 주 1회로 7일이 된다. 이 저장소는 **공개**라
+    # Actions 무료분이 무제한이므로 비용이 0이다(비공개인 ipo_note 와 다른 점).
+    - cron: "20 20 * * 0"
+  workflow_dispatch: {}   # 임시공휴일 지정 시 수동 실행
+
+concurrency:
+  group: update-holidays
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # 공휴일을 받아오기 **전에** 돌린다. 파서가 깨진 채로 JSON을 덮어쓰면
+      # 그 시점부터 전체 사용자의 휴무 판정이 틀린다.
+      - name: 테스트
+        run: python -m pytest tests -q
+
+      - name: 공휴일 갱신
+        env:
+          SERVICE_KEY: ${{ secrets.SERVICE_KEY }}
+        run: python scripts/fetch_holidays.py
+
+      - name: 커밋
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add holidays/
+          # 같은 날 두 번 돌면 updated 까지 같아 diff 가 없다. 그때는 조용히 넘어간다.
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 커밋하지 않는다."
+          else
+            git commit -m "chore: 공휴일 갱신 ($(date -u +%Y-%m-%d))"
+            git push
+          fi
