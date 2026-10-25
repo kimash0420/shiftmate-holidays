@@ -1,7 +1,7 @@
 {
   "year": 2026,
-  "updated": "2026-10-19",
-  "source": "holidays==0.106",
+  "updated": "2026-10-26",
+  "source": "holidays==0.107",
   "holidays": [
     {
       "date": "2026-01-01",
